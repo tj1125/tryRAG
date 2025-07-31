@@ -207,6 +207,7 @@ class RAGFramework:
 
     def _generate(self, 
         text: str,
+        temperature: float = 1,
     ):
         prompt = lm_tem(
             text=text
@@ -237,7 +238,8 @@ class RAGFramework:
             generation = self.model.generate(
                 **inputs, 
                 max_new_tokens=100, 
-                do_sample=True
+                do_sample=True, 
+                temperature=temperature, 
             )
             generation = generation[0][input_len:]
         response = self.tokenizer.decode(generation, skip_special_tokens=True)
@@ -246,7 +248,8 @@ class RAGFramework:
     def generate(self, 
         query: lookupQuery, 
         top_k: int = 3, 
-        use_upper_text: bool = False
+        use_upper_text: bool = False, 
+        temperature: float = 1.0,
     ) -> str:
         search_query = query_tem(
             query=query, 
@@ -276,7 +279,10 @@ class RAGFramework:
             context=context, 
             query=query, 
         )
-        response = self._generate(text=text)
+        response = self._generate(
+            text=text, 
+            temperature=temperature, 
+        )
 
         return {
             'response': response, 

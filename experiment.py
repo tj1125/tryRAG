@@ -13,6 +13,7 @@ import json
 import numpy as np
 import pandas as pd
 from transformers import AutoModelForCausalLM
+from datetime import datetime
 
 from tryRAG.framework import RAGFramework
 from tryRAG.evaluate import Evaluator, batchTestRunner
@@ -22,7 +23,7 @@ SAVE_PATH = os.path.join(os.getcwd(), "..", "results")
 def get_lmModel():
     return AutoModelForCausalLM.from_pretrained(
         "../../gemma-3-4b-it",
-        device_map="cuda",
+        device_map="auto",
     )
 
 def save_list2json(
@@ -81,8 +82,11 @@ def run_testingsets(
             evaluator=evaluator,
         )]
     print('\n...end run_testingsets\n')
+
+    nowtime = datetime.now().strftime("%y%m%d%H%M")
+
     df = pd.DataFrame(eval_list)
-    df.to_csv(os.path.join(SAVE_PATH, "results.csv"), index=False)
+    df.to_csv(os.path.join(SAVE_PATH, f"{nowtime}_results.csv"), index=False)
 
 if __name__ == "__main__":
 
