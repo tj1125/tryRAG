@@ -32,6 +32,7 @@ class RAGFramework:
         mode: str = "dense", #@ "dense" / "sparse" / "hybrid"
         chunk_level: str = "paragraph", #@ "web_page" / "paragraph" / "sentence"
         more_info: bool = False, 
+        lm_model=None,
         device="cuda", 
     ):
         self.device = device
@@ -45,12 +46,15 @@ class RAGFramework:
         if "dense" in self.mode:
             self.embedding_model = SentenceTransformer(emb_model_name)
         self.tokenizer = AutoTokenizer.from_pretrained(lm_model_name)
-        self.model = AutoModelForCausalLM.from_pretrained(
-            lm_model_name,
-            # torch_dtype=torch.float16,
-            device_map="auto",
-            # trust_remote_code=True
-        ).to(self.device)
+        if lm_model is None:
+            print(f"Loading language model: {lm_model_name}")
+            self.model = AutoModelForCausalLM.from_pretrained(
+                lm_model_name,
+                device_map="auto",
+            ).to(self.device)
+        else:
+            print(f"Using provided language model")
+            self.model = lm_model.to(self.device)
 
         self.index = None
         self.documents = []
@@ -129,7 +133,8 @@ class RAGFramework:
         data = np.asarray(token_len_list)
         plt.title(self.chunk_level)
         plt.hist(data, bins=100)
-        plt.show()
+        plt.savefig(f"./../hist_{self.chunk_level}{'_p' if self.more_info else ''}.png")
+        # plt.show()
 
         print(f"avg: {sum(token_len_list) / len(token_len_list)} tokens per chunk")
         print(f"max: {max(token_len_list)} tokens per chunk")
@@ -329,7 +334,7 @@ class RAGFramework:
             }
             with open(os.path.join(save_path, f"sparse_index.json"), 'w', encoding='utf-8') as f:
                 json.dump(bm25_data, f)
-        
+
         # Save documents data
         docs_data = []
         for doc in self.chunk_list:
@@ -337,6 +342,8 @@ class RAGFramework:
                 'idx': doc.idx,
                 'url': doc.url,
                 'content': doc.content,
+                'upper_text': doc.upper_text,
+                'token_len': doc.token_len,
             }
             # Save embedding for dense mode
             if "dense" in self.mode and hasattr(doc, 'embedding'):
@@ -376,6 +383,8 @@ class RAGFramework:
                 idx=doc_data['idx'],
                 url=doc_data['url'],
                 content=doc_data['content'],
+                upper_text=doc_data['upper_text'],
+                token_len=doc_data['token_len'],
             )
             # Restore embedding for dense mode
             if "dense" in self.mode and 'embedding' in doc_data:
@@ -386,25 +395,35 @@ class RAGFramework:
 
     @classmethod
     def from_config(cls, 
-        cfg
+        cfg, 
+        lm_model=None,
     ):
         rag = cls(
-            lm_model_name=cfg.get("lm_model_name", "gemma-3-4b-it"),
+            lm_model_name=cfg.get("lm_model_name", "google/gemma-3-4b-it"),
             emb_model_name=cfg.get("emb_model_name", "all-MiniLM-L6-v2"),
-            mode=cfg.get("mode", "dense"),  # "dense" or "sparse"
-            chunk_level=cfg.get("chunk_level", "paragraph"),  # "web_page" / "paragraph" / "sentence"
-            more_info=cfg.get("more_info", False),
+            mode=cfg.get("mode"),  # "dense" / "sparse"
+            chunk_level=cfg.get("chunk_level"),  # "web_page" / "paragraph" / "sentence"
+            more_info=cfg.get("more_info"), 
+            lm_model=lm_model, 
             device=cfg.get("device", "cuda"),
         )
+        if cfg.get("more_info", False):
+            save_path = os.path.join(os.getcwd(), '..', 'ref_idx', f"{cfg.get('chunk_level')}_p")
+        else:
+            save_path = os.path.join(os.getcwd(), '..', 'ref_idx', cfg.get("chunk_level"))
 
         if "doc_path" in cfg:
             doc_path = cfg["doc_path"]
             rag.load_doc_from_path(doc_path)
-            rag.save_index("./ref_idx/")
+            rag.save_index(save_path)
 
-        if "idx_path" in cfg:
+        elif "idx_path" in cfg:
             idx_path = cfg["idx_path"]
             rag.load_index(idx_path)
+        
+        else:
+            rag.load_index(save_path)
+
         print("RAGFramework initialized\n")
 
         return rag

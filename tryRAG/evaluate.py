@@ -5,7 +5,7 @@
  This file is part of a project licensed under the MIT License.
  See the LICENSE file in the project root for more information.
  
- last modified in 2507231725
+ last modified in 2507291738
 """
 
 import json
@@ -15,7 +15,7 @@ import random
 import os
 
 DATASET_PATH_DICT = {
-    'factoidQA': os.path.join(os.getcwd(), "..", "dataset", "factoid_qa_dataset.jsonl"),
+    'factoidQA': os.path.join(os.getcwd(), "..", "dataset", "ucb_eecs_rag_eval_dataset.jsonl"),
     'optionalQA': os.path.join(os.getcwd(), "..", "dataset", "multiple_choice_qa_dataset.jsonl"),
 }
 
@@ -35,8 +35,9 @@ class Evaluator():
     ):
         metric_dict = {}
         for idx, (_cand, _ref) in enumerate(zip(cand, ref)):
-            if _cand == '':
+            if _cand == '' or _cand is None or len(_cand) == 0:
                 _cand = 'unknown'
+                print(f"Warning: Empty candidate detected at index {idx}. Replacing with 'unknown'.")
 
             if 'bert_score' == metric.name:
                 _metric = metric.compute(
@@ -160,11 +161,8 @@ def custom_optionalQA(
 class batchTestRunner():
     def __init__(self, 
         rag, 
-        dataset_path, 
         dataset_type, 
-        TOP_K=10, 
-        USE_UPPER_TEXT=False, 
-        USE_PRE_ANSWER=False,
+        dataset_path = None, 
     ):
         self.rag = rag
         self.dataset_type = dataset_type
@@ -173,11 +171,10 @@ class batchTestRunner():
         elif self.dataset_type == 'optionalQA':
             self.data_list = custom_optionalQA(dataset_path)
 
-        self.TOP_K = TOP_K
-        self.USE_UPPER_TEXT = USE_UPPER_TEXT
-        self.USE_PRE_ANSWER = USE_PRE_ANSWER
-
-    def ask(self,
+    def test(self, 
+        top_k, 
+        use_upper_text, 
+        use_pre_answer,
     ):
         url_acc_list = []
         con_acc_list = []
@@ -187,16 +184,16 @@ class batchTestRunner():
 
             response = self.rag.ask(
                 sample['question'], 
-                top_k=TOP_K, 
-                use_upper_text=USE_UPPER_TEXT, 
-                pre_answer=USE_PRE_ANSWER, 
+                top_k=top_k, 
+                use_upper_text=use_upper_text, 
+                pre_answer=use_pre_answer, 
             )
 
             url_pred_list = []
             doc_pred_list = []
             for doc in response['relevant_docs']:
                 url_pred_list += [doc.url]
-                if USE_UPPER_TEXT:
+                if use_upper_text:
                     doc_pred_list += [doc.upper_text]
                 else:
                     doc_pred_list += [doc.content]
