@@ -77,9 +77,9 @@ testrunner = batchTestRunner(
 )
 
 result_dict = testrunner.test(
-    TOP_K=TOP_K, 
-    USE_UPPER_TEXT=USE_UPPER_TEXT, 
-    USE_PRE_ANSWER=USE_PRE_ANSWER,
+   top_k=TOP_K, 
+   use_upper_text=USE_UPPER_TEXT, 
+   pre_answer=USE_PRE_ANSWER, 
 )
 
 evaluator = Evaluator()
