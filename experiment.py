@@ -12,11 +12,14 @@ import os
 import json
 import numpy as np
 import pandas as pd
+import torch
 from transformers import AutoModelForCausalLM
 from datetime import datetime
 
 from tryRAG.framework import RAGFramework
 from tryRAG.evaluate import Evaluator, batchTestRunner
+
+CUDA_LAUNCH_BLOCKING=1
 
 SAVE_PATH = os.path.join(os.getcwd(), "..", "results")
 
@@ -65,6 +68,8 @@ def run_test(
     #     meta_list=eval_res, 
     #     save_filename=exp_cfg['exp_name'], 
     # )
+    torch.cuda.empty_cache()
+    torch.cuda.synchronize()
     return exp_cfg.update(eval_res)
 
 def run_testingsets(
@@ -89,7 +94,7 @@ def run_testingsets(
     df.to_csv(os.path.join(SAVE_PATH, f"{nowtime}_results.csv"), index=False)
 
 if __name__ == "__main__":
-
+    
     if not os.path.exists(SAVE_PATH):
         os.makedirs(SAVE_PATH)
     setting_list = []

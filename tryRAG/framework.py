@@ -54,7 +54,8 @@ class RAGFramework:
             ).to(self.device)
         else:
             print(f"Using provided language model")
-            self.model = lm_model.to(self.device)
+            self.model = lm_model # .to(self.device)
+        self.model.eval()
 
         self.index = None
         self.documents = []
