@@ -6,6 +6,8 @@ A small exploration of retrieval-augmented generation (RAG) in Python.
 - `tryRAG/framework.py` – main class with indexing and generation logic.
 - `tryRAG/dataType.py` – dataclasses for document chunks and query objects.
 - `tryRAG/templates.py` – prompt templates used by the framework.
+- `tryRAG/evaluate.py` – evaluate and data loading methods.
+- `experiment.py` – run batch testing of experiments.
 - `demo.ipynb` – Jupyter notebook that demonstrates basic usage.
 
 ## Installation
@@ -21,7 +23,7 @@ A small exploration of retrieval-augmented generation (RAG) in Python.
 3. Install the dependencies:
    ```bash
    pip install torch==2.4.1 torchvision==0.19.1 torchaudio==2.4.1 --index-url https://download.pytorch.org/whl/cu121
-   pip install transformers==4.51.3 accelerate==0.26.0 faiss-cpu==1.11.0.post1 sentence-transformers==5.0.0
+   pip install transformers==4.51.3 accelerate==0.26.0 faiss-cpu==1.11.0.post1 sentence-transformers==5.0.0 evaluate==0.4.5
    ```
 
 ## Usage
@@ -35,11 +37,17 @@ from tryRAG.framework import RAGFramework
 cfg = {
     "lm_model_name": "google/gemma-3-4b-it",
     "emb_model_name": "all-MiniLM-L6-v2",
-    "mode": "dense", #@ "dense" / "sparse"
+    "mode": "hybrid", #@ "hybrid" / "sparse" / "hybrid"
+    "chunk_level": "paragraph", #@ "web_page" / "paragraph" / "sentence"
+    "more_info": True, #@ True / False
     "doc_path": "path/to/data.jsonl", 
     # "idx_path": "path/to/saved/dir",
     "device": "cuda",
 }
+USE_UPPER_TEXT = False
+USE_PRE_ANSWER = False
+TOP_K = 5
+
 rag = RAGFramework.from_config(cfg)
 
 ```
@@ -47,8 +55,38 @@ rag = RAGFramework.from_config(cfg)
 3. Ask a question:
 
 ```python
-response = rag.ask("What courses are offered in EECS?")
+question = 'Who is Lee Julian Purnell'
+
+response = self.rag.ask(
+   question, 
+   top_k=TOP_K, 
+   use_upper_text=USE_UPPER_TEXT, 
+   pre_answer=USE_PRE_ANSWER, 
+)
 print(response["response"])
+```
+
+4. Run batch testing:
+
+```python
+from tryRAG.evaluate import Evaluator, batchTestRunner
+
+testrunner = batchTestRunner(
+    rag=rag, 
+    dataset_type='optionalQA', #@ 'factoidQA' / 'optionalQA'
+)
+
+result_dict = testrunner.test(
+    TOP_K=TOP_K, 
+    USE_UPPER_TEXT=USE_UPPER_TEXT, 
+    USE_PRE_ANSWER=USE_PRE_ANSWER,
+)
+
+evaluator = Evaluator()
+eval_res = evaluator.evaluate(
+    result_dict=result_dict,
+)
+print(eval_res)
 ```
 
 The framework retrieves the most relevant document chunks, builds a prompt, and

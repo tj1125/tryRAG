@@ -93,7 +93,7 @@ if __name__ == "__main__":
         {
             'exp_name': 'CwMdT02DfUfPf', 
             'dataset_type': 'factoidQA', #@ "factoidQA" / "optionalQA"
-            'top_k': 2, 
+            'top_k': 1, 
             'use_upper_text': False, 
             'use_pre_answer': False, 
             "mode": "dense", #@ "dense" / "sparse" / "hybrid"
@@ -103,7 +103,7 @@ if __name__ == "__main__":
         {
             'exp_name': 'CwMsT02DfUfPf', 
             'dataset_type': 'factoidQA', #@ "factoidQA" / "optionalQA"
-            'top_k': 2, 
+            'top_k': 1, 
             'use_upper_text': False, 
             'use_pre_answer': False, 
             "mode": "sparse", #@ "dense" / "sparse" / "hybrid"
@@ -113,7 +113,7 @@ if __name__ == "__main__":
         {
             'exp_name': 'CwMhT02DfUfPf', 
             'dataset_type': 'factoidQA', #@ "factoidQA" / "optionalQA"
-            'top_k': 2, 
+            'top_k': 1, 
             'use_upper_text': False, 
             'use_pre_answer': False, 
             "mode": "hybrid", #@ "dense" / "sparse" / "hybrid"
@@ -123,7 +123,7 @@ if __name__ == "__main__":
         {
             'exp_name': 'CwMdT02DoUfPf', 
             'dataset_type': 'optionalQA', #@ "factoidQA" / "optionalQA"
-            'top_k': 2, 
+            'top_k': 1, 
             'use_upper_text': False, 
             'use_pre_answer': False, 
             "mode": "dense", #@ "dense" / "sparse" / "hybrid"
@@ -133,7 +133,7 @@ if __name__ == "__main__":
         {
             'exp_name': 'CwMsT02DoUfPf', 
             'dataset_type': 'optionalQA', #@ "factoidQA" / "optionalQA"
-            'top_k': 2, 
+            'top_k': 1, 
             'use_upper_text': False, 
             'use_pre_answer': False, 
             "mode": "sparse", #@ "dense" / "sparse" / "hybrid"
@@ -143,7 +143,7 @@ if __name__ == "__main__":
         {
             'exp_name': 'CwMhT02DoUfPf', 
             'dataset_type': 'optionalQA', #@ "factoidQA" / "optionalQA"
-            'top_k': 2, 
+            'top_k': 1, 
             'use_upper_text': False, 
             'use_pre_answer': False, 
             "mode": "hybrid", #@ "dense" / "sparse" / "hybrid"
