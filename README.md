@@ -9,7 +9,6 @@ A small exploration of retrieval-augmented generation (RAG) in Python.
   * `web_page`: Treats the entire webpage content as a single chunk.
   * `paragraph`: Splits by paragraphs, with the option to retain surrounding context (`more_info`).
   * `sentence`: Further splits paragraphs into individual sentences.
-* **DocChunk Data Type**: Defined in `dataType.py`, it records chunk index, source URL, content, upper-level text (if any), token length, and related information.
 
 After building the index, it can be saved as either a FAISS file (dense vector) or a JSON file (sparse BM25), enabling quick reloading in future runs.
 
@@ -21,12 +20,10 @@ The framework supports three retrieval modes, specified by the `mode` parameter 
 2. **sparse**: Utilizes built-in BM25 for keyword matching.
 3. **hybrid**: Combines both dense and sparse mechanisms, merging results and removing duplicates.
 
-Additionally, various chunking strategies can be formed by combining `chunk_level` and `more_info`, while `use_upper_text` controls whether to cite the chunk itself or its upper-level context in the response.
-
 ## Additional Enhancements
 
 * **`use_upper_text`**: When set to `True` in the `ask()` function, the model uses the upper-level full text corresponding to the chunk to provide richer context.
-* **`use_pre_answer`**: When enabled, `ask()` first generates a predicted answer based on the query, then feeds both the prediction and retrieved documents into the model to enhance coverage.
+* **`use_pre_answer`**: When set to `True` in the `ask()` first generates a predicted answer based on the query, then feeds both the prediction and retrieved documents into the model to enhance coverage.
 * **`more_info`**: In paragraph mode, adjacent paragraphs can be merged into the chunk to preserve more contextual information.
 * **Index Save/Load Support**: `save_index()` and `load_index()` allow saving and loading vector or BM25 parameters along with document content from a specified path, facilitating repeated experiments.
 * **Batch Testing & Evaluation**: `experiment.py`, in combination with `batchTestRunner` and `Evaluator` from `evaluate.py`, supports batch execution of multiple configurations, computing BLEU, ROUGE, BERTScore, and hit rate metrics.
