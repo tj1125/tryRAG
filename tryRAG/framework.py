@@ -5,7 +5,7 @@
  This file is part of a project licensed under the MIT License.
  See the LICENSE file in the project root for more information.
  
- last modified in 2507221631
+ last modified in 2507231725
 """
 
 
@@ -18,65 +18,145 @@ import faiss
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import re
-import json
 from collections import Counter
 import math
+import matplotlib.pyplot as plt
 
 from .dataType import DocChunk, lookupQuery
-from .templates import prompt_tem, query_tem, lm_tem
+from .templates import prompt_tem, query_tem, lm_tem, preans_tem
 
 class RAGFramework:
     def __init__(self, 
         lm_model_name: str = "gemma-3-4b-it", 
         emb_model_name: str = "all-MiniLM-L6-v2", 
-        mode: str = "dense ", #@ "dense" / "sparse"
+        mode: str = "dense", #@ "dense" / "sparse" / "hybrid"
+        chunk_level: str = "paragraph", #@ "web_page" / "paragraph" / "sentence"
+        more_info: bool = False, 
+        lm_model=None,
         device="cuda", 
     ):
         self.device = device
-        self.mode = mode
+        if mode == 'hybrid':
+            self.mode = ["dense", "sparse"]
+        else:
+            self.mode = [mode]
+        self.chunk_level = chunk_level
+        self.more_info = more_info
         
-        if self.mode == "dense":
+        if "dense" in self.mode:
             self.embedding_model = SentenceTransformer(emb_model_name)
         self.tokenizer = AutoTokenizer.from_pretrained(lm_model_name)
-        self.model = AutoModelForCausalLM.from_pretrained(
-            lm_model_name,
-            # torch_dtype=torch.float16,
-            device_map="auto",
-            # trust_remote_code=True
-        ).to(self.device)
+        if lm_model is None:
+            print(f"Loading language model: {lm_model_name}")
+            self.model = AutoModelForCausalLM.from_pretrained(
+                lm_model_name,
+                device_map="auto",
+            ).to(self.device)
+        else:
+            print(f"Using provided language model")
+            self.model = lm_model # .to(self.device)
+        self.model.eval()
 
         self.index = None
         self.documents = []
         self.bm25 = BM25()
 
-    def preprocess_text2chunk(self, 
-        text: str
-    ) -> List[str]:
-        chunks = text
-        return chunks
+    def preprocess_pages2chunks(self, 
+        pages_list, 
+    ):
+        chunked_list = []
+        for page in pages_list:
+
+            if self.chunk_level == 'web_page':
+                chunked_list.append({
+                    'text': page['text'].strip(),
+                    'upper_text': None, 
+                    'url': page['url']
+                })
+
+            paragraphs = page['text'].split('\n\n')
+            for para_idx in range(len(paragraphs)):
+
+                if self.chunk_level == 'paragraph':
+                    if self.more_info:
+                        if len(paragraphs) == 1:
+                            text = paragraphs[para_idx].strip()
+                        elif para_idx == 0:
+                            text = f"{paragraphs[para_idx].strip()}\n\n{paragraphs[para_idx + 1].strip()}"
+                        elif para_idx == len(paragraphs) - 1:
+                            text = f"{paragraphs[para_idx - 1].strip()}\n\n{paragraphs[para_idx].strip()}"
+                        else:
+                            text = f"{paragraphs[para_idx - 1].strip()}\n\n{paragraphs[para_idx].strip()}\n\n{paragraphs[para_idx + 1].strip()}"
+
+                        chunked_list.append({
+                            'text': text,
+                            'upper_text': page['text'].strip(), 
+                            'url': page['url']
+                        })
+                    else:
+                        chunked_list.append({
+                            'text': paragraphs[para_idx].strip(),
+                            'upper_text': page['text'].strip(), 
+                            'url': page['url']
+                        })
+                elif self.chunk_level == 'sentence':
+                    sentences = re.split(r'(?<=[.!?]) +', paragraphs[para_idx].strip())
+                    for sentence in sentences:
+                        chunked_list.append({
+                            'text': sentence.strip(),
+                            'upper_text': paragraphs[para_idx].strip(), 
+                            'url': page['url']
+                        })
+
+        idx = 0
+        all_chunks = []
+        token_len_list = []
+        for chunked in chunked_list:
+            token_len = self.tokenizer(
+                chunked['text'], 
+                return_tensors='pt', 
+                truncation=True, 
+                max_length=2048, 
+            )['input_ids'].shape[-1]
+            token_len = int(token_len)
+
+            doc = DocChunk(
+                idx=idx, 
+                url=chunked['url'], 
+                content=chunked['text'], 
+                upper_text=chunked['upper_text'],
+                token_len=token_len,
+            )
+            token_len_list += [token_len]
+            all_chunks += [doc]
+            idx += 1
+
+        data = np.asarray(token_len_list)
+        plt.title(self.chunk_level)
+        plt.hist(data, bins=100)
+        plt.savefig(f"./../hist_{self.chunk_level}{'_p' if self.more_info else ''}.png")
+        # plt.show()
+
+        print(f"avg: {sum(token_len_list) / len(token_len_list)} tokens per chunk")
+        print(f"max: {max(token_len_list)} tokens per chunk")
+        print(f"hit: {token_len_list.count(2048)} / {len(token_len_list)}")
+        return all_chunks
     
     def load_doc_from_path(self, 
         documents_path: str
     ):
-        all_chunks = []
-        idx = 0
+        pages_list = []
         with open(documents_path, 'r', encoding='utf-8') as file:
             for line in file:
                 line = line.strip()
                 if line:
                     data = json.loads(line)
-                    chunks = self.preprocess_text2chunk(data['text'])
-                    doc = DocChunk(
-                        idx=idx, 
-                        url=data['url'], 
-                        content=chunks, 
-                    )
-                    all_chunks += [doc]
-                    idx += 1
-        
+                    pages_list.append(data)
+
+        all_chunks = self.preprocess_pages2chunks(pages_list)
         contents = [doc.content for doc in all_chunks]
 
-        if self.mode == "dense":
+        if "dense" in self.mode:
             embeddings = self.embedding_model.encode(contents)
             self.index = faiss.IndexFlatIP(embeddings.shape[1]) # Create FAISS index
             faiss.normalize_L2(embeddings)
@@ -86,7 +166,7 @@ class RAGFramework:
             for doc, embedding in zip(all_chunks, embeddings):
                 doc.embedding = embedding
 
-        elif self.mode == "sparse":
+        if "sparse" in self.mode:
             self.bm25.fit(contents)
 
         self.chunk_list = all_chunks
@@ -96,52 +176,40 @@ class RAGFramework:
         search_query: str, 
         top_k: int = 3
     ) -> List[DocChunk]:
-        if self.mode == "dense":
+        
+        relevant_docs = []
+        if "dense" in self.mode:
             query_embedding = self.embedding_model.encode([search_query])
             faiss.normalize_L2(query_embedding)
-            
             scores, indices = self.index.search(query_embedding.astype(np.float32), top_k)
             
-            relevant_docs = []
             for score, idx in zip(scores[0], indices[0]):
                 if idx < len(self.chunk_list):
                     doc = self.chunk_list[idx]
                     relevant_docs.append(doc)
 
-        elif self.mode == "sparse":
-
+        if "sparse" in self.mode:
             results = self.bm25.search(search_query, top_k)
 
-            relevant_docs = []
             for score, idx in results:
                 if idx < len(self.chunk_list):
                     doc = self.chunk_list[idx]
-                    # Store the BM25 score in the document object for potential use
                     doc.score = score
                     relevant_docs.append(doc)
 
-        return relevant_docs
+        seen = set()
+        unique_data = []
+        for doc in relevant_docs:
+            if doc.idx not in seen:
+                seen.add(doc.idx)
+                unique_data.append(doc)
 
-    def generate(self, 
-        query: lookupQuery, 
-        top_k: int = 3, 
-    ) -> str:
-        search_query = query_tem(
-            query=query, 
-        )
-        relevant_docs = self.retrieve_relevant_docs(
-            search_query=search_query, 
-            top_k=top_k, 
-        )
-        
-        context = ""
-        for i, doc in enumerate(relevant_docs):
-            context += f"References {i+1}:{doc.content}\n"
-        
-        text = prompt_tem(
-            context=context, 
-            query=query, 
-        )
+        return unique_data
+
+    def _generate(self, 
+        text: str,
+        temperature: float = 1,
+    ):
         prompt = lm_tem(
             text=text
         )
@@ -161,14 +229,62 @@ class RAGFramework:
 
         input_len = inputs["input_ids"].shape[-1]
 
+        max_len = int(self.model.config.text_config.max_position_embeddings)
+        if input_len > max_len:
+            raise ValueError(
+                f"Input length {input_len} exceeds maximum allowed length of {max_len} tokens."
+            )
+
         with torch.inference_mode():
             generation = self.model.generate(
                 **inputs, 
                 max_new_tokens=100, 
-                do_sample=True
+                do_sample=True, 
+                temperature=temperature, 
             )
             generation = generation[0][input_len:]
         response = self.tokenizer.decode(generation, skip_special_tokens=True)
+        return response
+
+    def generate(self, 
+        query: lookupQuery, 
+        top_k: int = 3, 
+        use_upper_text: bool = False, 
+        temperature: float = 1.0,
+    ) -> str:
+        search_query = query_tem(
+            query=query, 
+        )
+        relevant_docs = self.retrieve_relevant_docs(
+            search_query=search_query, 
+            top_k=top_k, 
+        )
+
+        if use_upper_text:
+            seen = set()
+            unique_data = []
+            for doc in relevant_docs:
+                if doc.upper_text not in seen:
+                    seen.add(doc.upper_text)
+                    unique_data.append(doc)
+            relevant_docs = unique_data
+
+        context = ""
+        for i, doc in enumerate(relevant_docs):
+            if use_upper_text:
+                context += f"References {i+1}:{doc.upper_text}\n"
+            else:
+                context += f"References {i+1}:{doc.content}\n"
+        
+        text = prompt_tem(
+            context=context, 
+            query=query, 
+        )
+        response = self._generate(
+            text=text, 
+            temperature=temperature, 
+        )
+
         return {
             'response': response, 
             'prompt': text, 
@@ -176,14 +292,31 @@ class RAGFramework:
         }
 
     def ask(self, 
-        question: str
+        question: str, 
+        top_k: int = 3, 
+        use_upper_text: bool = False, 
+        pre_answer: bool = False, 
     ):
-        query = lookupQuery(
-            question=question, 
-        )
+        if pre_answer:
+            text = preans_tem(question=question)
+            response = self._generate(text=text)
+            response = response.split('Answer:')[-1]
+            preansing = f"{question}\nSpeculation:\n{response}"
+            query = lookupQuery(
+                question=preansing, 
+            )
+        else:
+            query = lookupQuery(
+                question=question, 
+            )
+            
         response = self.generate(
-            query=query
+            query=query, 
+            top_k=top_k,
+            use_upper_text=use_upper_text
         )
+        if pre_answer:
+            response['pre_answer'] = preansing
         return response
 
     def save_index(self, 
@@ -191,10 +324,11 @@ class RAGFramework:
     ):
         os.makedirs(save_path, exist_ok=True)
         
-        if self.mode == "dense":
+        if "dense" in self.mode:
             # Save FAISS index
-            faiss.write_index(self.index, os.path.join(save_path, f"{self.mode}_index.faiss"))
-        elif self.mode == "sparse":
+            faiss.write_index(self.index, os.path.join(save_path, f"dense_index.faiss"))
+
+        if "sparse" in self.mode:
             # Save BM25 index
             bm25_data = {
                 'k1': self.bm25.k1,
@@ -205,9 +339,9 @@ class RAGFramework:
                 'avgdl': self.bm25.avgdl,
                 'corpus': self.bm25.corpus
             }
-            with open(os.path.join(save_path, f"{self.mode}_index.json"), 'wb') as f:
+            with open(os.path.join(save_path, f"sparse_index.json"), 'w', encoding='utf-8') as f:
                 json.dump(bm25_data, f)
-        
+
         # Save documents data
         docs_data = []
         for doc in self.chunk_list:
@@ -215,25 +349,28 @@ class RAGFramework:
                 'idx': doc.idx,
                 'url': doc.url,
                 'content': doc.content,
+                'upper_text': doc.upper_text,
+                'token_len': doc.token_len,
             }
             # Save embedding for dense mode
-            if self.mode == "dense" and hasattr(doc, 'embedding'):
+            if "dense" in self.mode and hasattr(doc, 'embedding'):
                 doc_dict['embedding'] = doc.embedding.tolist()
             docs_data.append(doc_dict)
         
-        with open(os.path.join(save_path, f"{self.mode}_documents.json"), 'w', encoding='utf-8') as f:
+        with open(os.path.join(save_path, f"documents.json"), 'w', encoding='utf-8') as f:
             json.dump(docs_data, f, ensure_ascii=False, indent=2)
         print(f"Saved {self.mode} index to {save_path}")
     
     def load_index(self, 
         load_path: str
     ):
-        if self.mode == "dense":
+        if "dense" in self.mode:
             # Load FAISS index
-            self.index = faiss.read_index(os.path.join(load_path, f"{self.mode}_index.faiss"))
-        elif self.mode == "sparse":
+            self.index = faiss.read_index(os.path.join(load_path, f"dense_index.faiss"))
+
+        if "sparse" in self.mode:
             # Load BM25 index
-            with open(os.path.join(load_path, f"{self.mode}_index.json"), 'rb') as f:
+            with open(os.path.join(load_path, f"sparse_index.json"), 'r', encoding='utf-8') as f:
                 bm25_data = json.load(f)
             
             self.bm25 = BM25(k1=bm25_data['k1'], b=bm25_data['b'])
@@ -244,7 +381,7 @@ class RAGFramework:
             self.bm25.corpus = bm25_data['corpus']
         
         # Load documents
-        with open(os.path.join(load_path, f"{self.mode}_documents.json"), 'r', encoding='utf-8') as f:
+        with open(os.path.join(load_path, f"documents.json"), 'r', encoding='utf-8') as f:
             docs_data = json.load(f)
         
         self.chunk_list = []
@@ -253,9 +390,11 @@ class RAGFramework:
                 idx=doc_data['idx'],
                 url=doc_data['url'],
                 content=doc_data['content'],
+                upper_text=doc_data['upper_text'],
+                token_len=doc_data['token_len'],
             )
             # Restore embedding for dense mode
-            if self.mode == "dense" and 'embedding' in doc_data:
+            if "dense" in self.mode and 'embedding' in doc_data:
                 doc.embedding = np.array(doc_data['embedding'])
             self.chunk_list.append(doc)
         
@@ -263,23 +402,35 @@ class RAGFramework:
 
     @classmethod
     def from_config(cls, 
-        cfg
+        cfg, 
+        lm_model=None,
     ):
         rag = cls(
-            lm_model_name=cfg.get("lm_model_name", "gemma-3-4b-it"),
+            lm_model_name=cfg.get("lm_model_name", "google/gemma-3-4b-it"),
             emb_model_name=cfg.get("emb_model_name", "all-MiniLM-L6-v2"),
-            mode=cfg.get("mode", "dense"),  # "dense" or "sparse"
+            mode=cfg.get("mode"),  # "dense" / "sparse"
+            chunk_level=cfg.get("chunk_level"),  # "web_page" / "paragraph" / "sentence"
+            more_info=cfg.get("more_info"), 
+            lm_model=lm_model, 
             device=cfg.get("device", "cuda"),
         )
+        if cfg.get("more_info", False):
+            save_path = os.path.join(os.getcwd(), '..', 'ref_idx', f"{cfg.get('chunk_level')}_p")
+        else:
+            save_path = os.path.join(os.getcwd(), '..', 'ref_idx', cfg.get("chunk_level"))
 
         if "doc_path" in cfg:
             doc_path = cfg["doc_path"]
             rag.load_doc_from_path(doc_path)
-            rag.save_index("./ref_idx/")
+            rag.save_index(save_path)
 
-        if "idx_path" in cfg:
+        elif "idx_path" in cfg:
             idx_path = cfg["idx_path"]
             rag.load_index(idx_path)
+        
+        else:
+            rag.load_index(save_path)
+
         print("RAGFramework initialized\n")
 
         return rag
